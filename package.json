@@ -2,8 +2,8 @@
   "name": "module-override-webpack-plugin",
   "version": "0.0.1",
   "description": "Override modules",
-  "main": "dist/index",
-  "module": "src/index",
+  "main": "dist/index.js",
+  "module": "src/plugin.js",
   "scripts": {
     "start": "npm run build -- -w",
     "build": "NODE_ENV=production babel src -d dist --ignore 'src/**/*.test.js' --copy-files --source-maps",
@@ -14,13 +14,16 @@
     "type": "git",
     "url": "git+https://github.com/mzvonar/module-override-webpack-plugin.git"
   },
+  "files": [
+    "dist"
+  ],
   "keywords": [
     "override",
     "modules",
     "webpack",
     "plugin"
   ],
-  "author": "Martin Zvonar <riffmaker@gmail.com> (martinzvonar.sk)",
+  "author": "Martin Zvonár <riffmaker@gmail.com> (martinzvonar.sk)",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/mzvonar/module-override-webpack-plugin/issues"
@@ -33,6 +36,7 @@
     "@babel/cli": "^7.0.0-beta.51",
     "@babel/core": "^7.0.0-beta.51",
     "@babel/preset-env": "^7.0.0-beta.51",
+    "schema-utils": "^0.4.5",
     "webpack-sources": "^1.1.0"
   },
   "devDependencies": {

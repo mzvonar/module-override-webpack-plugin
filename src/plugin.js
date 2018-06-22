@@ -1,14 +1,27 @@
-import path from 'path'
 import {createHash} from 'crypto'
-import {ConcatSource} from 'webpack-sources'
-import loader from './loader';
+import validateOptions from 'schema-utils';
 import SingleEntryPlugin from 'webpack/lib/SingleEntryPlugin';
 import MultiEntryPlugin from 'webpack/lib/MultiEntryPlugin';
-import { ReplaceSource } from 'webpack-sources';
 
 const PLUGIN_NAME = 'ModuleOverridePlugin';
+const NS = '__moduleOverrideWebpackPlugin__';
+const LOADER_NS = '__moduleOverrides__';
 const REGEXP_NAME = /\[name\]/gi;
 const REGEXP_OVERRIDE = /\[override\]/gi;
+
+const schema = {
+    type: 'object',
+    properties: {
+        overrides: {
+            type: 'array',
+            minItems: 1
+        },
+        outputPath: {
+            type: 'string'
+        }
+    },
+    required: ['overrides', 'outputPath']
+};
 
 const getReplacer = (value, allowEmpty) => {
     const fn = (match, ...args) => {
@@ -34,8 +47,18 @@ const itemToPlugin = (context, item, name) => {
     return new SingleEntryPlugin(context, item, name);
 };
 
+function getModule(compilation, resource) {
+    for(let i = 0, length = compilation.modules.length; i < length; i += 1) {
+        if(compilation.modules[i].resource === resource) {
+            return compilation.modules[i];
+        }
+    }
+}
+
 class ModuleOverrideWebpackPlugin {
     constructor(options) {
+        validateOptions(schema, options, 'module-override-webpack-plugin');
+
         this.options = Object.assign({
             overrides: [],
             outputPath: '[name]/[override]',
@@ -43,23 +66,13 @@ class ModuleOverrideWebpackPlugin {
         }, options);
 
         if(!this.options.outputPath.match(REGEXP_OVERRIDE)) {
-            throw new Error('[webpack-module-override] Error: outputPath must contain [override] arg');
+            throw new Error('[module-override-webpack-plugin] Error: outputPath must contain [override] placeholder');
         }
 
         this.entryMap = {};
-        // this.filePathRe = /WebpackMultiOutput-(.*?)-WebpackMultiOutput/;
-        this.filePathRe = /\/\* __WebpackModuleOverride-(.*?)-__WebpackModuleOverride__ \*\//;
-        this.filePathReG = /\/\* __WebpackModuleOverride-.*?-__WebpackModuleOverride__ \*\/([\S\s]*?)\/* __WebpackModuleOverride__ \*\//g;
-        this.jsonpRe = /__WEBPACK_MULTI_OUTPUT_CHUNK_MAP__/;
-
-        this.compilationContext = {
-            overrides: this.options.overrides
-        };
     }
 
     apply(compiler) {
-
-
         compiler.hooks.entryOption.tap(PLUGIN_NAME, (context, entry) => {
             if (typeof entry === "string" || Array.isArray(entry)) {
                 this.addEntry(context, entry, '', compiler);
@@ -73,30 +86,26 @@ class ModuleOverrideWebpackPlugin {
         });
 
         compiler.hooks.compilation.tap(PLUGIN_NAME, (compilation) => {
-            compilation.__webpackModuleOverride__ = this.compilationContext;
-
-            if (!this.options.overrides.length) {
-                compilation.errors.push(new Error(`[webpack-multi-output] Error: option "overrides" must be an array of length >= 1`))
-            }
-
-            const getModule = (compilation, resource) => {
-                for(let i = 0, length = compilation.modules.length; i < length; i += 1) {
-                    if(compilation.modules[i].resource === resource) {
-                        return compilation.modules[i];
-                    }
-                }
-            };
-
             compilation.mainTemplate.hooks.bootstrap.tap(PLUGIN_NAME, (source, chunk, hash, moduleTemplate) => {
-                moduleTemplate.hooks.content.tap(PLUGIN_NAME, (moduleSource, module, options, dependencyTemplates) => {
-                    if(compilation.__webpackModuleOverride__.overridesMap && compilation.__webpackModuleOverride__.overridesMap[module.resource] && compilation.__webpackModuleOverride__.overridesMap[module.resource][this.entryMap[options.chunk.name]]) {
-                        const overrideResource = compilation.__webpackModuleOverride__.overridesMap[module.resource][this.entryMap[options.chunk.name]];
-                        const overrideModule = getModule(compilation, overrideResource);
+                compilation[NS] = {
+                    entryMap: this.entryMap
+                };
 
-                        if(overrideModule) {
-                            return overrideModule.source(dependencyTemplates, moduleTemplate.runtimeTemplate, moduleTemplate.type);
+                moduleTemplate.hooks.content.tap(PLUGIN_NAME, (moduleSource, module, options, dependencyTemplates) => {
+                    if(!compilation[LOADER_NS]) {
+                        // compilation.errors.push(new Error(`[module-override-webpack-plugin] Error: plugin was used without module-override-loader`));
+                    }
+                    else {
+                        if(compilation[LOADER_NS].overridesMap && compilation[LOADER_NS].overridesMap[module.resource] && compilation[LOADER_NS].overridesMap[module.resource][this.entryMap[options.chunk.name]]) {
+                            const overrideResource = compilation[LOADER_NS].overridesMap[module.resource][this.entryMap[options.chunk.name]];
+                            const overrideModule = getModule(compilation, overrideResource);
+
+                            if(overrideModule) {
+                                return overrideModule.source(dependencyTemplates, moduleTemplate.runtimeTemplate, moduleTemplate.type);
+                            }
                         }
                     }
+
 
                     return moduleSource;
                 });
@@ -105,24 +114,23 @@ class ModuleOverrideWebpackPlugin {
             compilation.hooks.childCompiler.tap(PLUGIN_NAME, (compiler) => {
 
                 compiler.hooks.compilation.tap(PLUGIN_NAME, (compilation) => {
-                    compilation.__webpackModuleOverride__ = this.compilationContext;
+                    compilation[NS] = {
+                        entryMap: this.entryMap
+                    };
 
                     compilation.mainTemplate.hooks.renderManifest.tap(PLUGIN_NAME, (result, { chunk }) => {
-                        const getModule = (compilation, resource) => {
-                            for(let i = 0, length = compilation.modules.length; i < length; i += 1) {
-                                if(compilation.modules[i].resource === resource) {
-                                    return compilation.modules[i];
-                                }
-                            }
-                        };
-
                         chunk._modules.forEach(module => {
-                            if(compilation.__webpackModuleOverride__.overridesMap && compilation.__webpackModuleOverride__.overridesMap[module.resource] && compilation.__webpackModuleOverride__.overridesMap[module.resource][this.entryMap[chunk.name]]) {
-                                const overrideModule = getModule(compilation, compilation.__webpackModuleOverride__.overridesMap[module.resource][this.entryMap[chunk.name]]);
+                            if(!compilation[LOADER_NS]) {
+                                // compilation.errors.push(new Error(`[module-override-webpack-plugin] Error: plugin was used without module-override-loader`));
+                            }
+                            else {
+                                if (compilation[LOADER_NS].overridesMap && compilation[LOADER_NS].overridesMap[module.resource] && compilation[LOADER_NS].overridesMap[module.resource][this.entryMap[chunk.name]]) {
+                                    const overrideModule = getModule(compilation, compilation[LOADER_NS].overridesMap[module.resource][this.entryMap[chunk.name]]);
 
-                                if(overrideModule) {
-                                    chunk._modules.delete(module);
-                                    chunk._modules.add(overrideModule);
+                                    if (overrideModule) {
+                                        chunk._modules.delete(module);
+                                        chunk._modules.add(overrideModule);
+                                    }
                                 }
                             }
                         });
@@ -147,14 +155,6 @@ class ModuleOverrideWebpackPlugin {
             compiler.apply(itemToPlugin(context, entry, overrideName));
         }
     }
-
-    getFilePath(string) {
-        const match = string.match(this.filePathRe)
-
-        return match ? match[1] : ''
-    }
 }
-
-ModuleOverrideWebpackPlugin.loader = require.resolve('./loader');
 
 export default ModuleOverrideWebpackPlugin;
