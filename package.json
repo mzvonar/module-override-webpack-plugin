@@ -30,7 +30,7 @@
   },
   "homepage": "https://github.com/mzvonar/module-override-webpack-plugin#readme",
   "peerDependencies": {
-    "webpack": "^4.4.0"
+    "webpack": "^4.12.0"
   },
   "dependencies": {
     "schema-utils": "^0.4.5",
