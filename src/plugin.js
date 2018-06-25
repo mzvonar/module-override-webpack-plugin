@@ -86,11 +86,11 @@ class ModuleOverrideWebpackPlugin {
         });
 
         compiler.hooks.compilation.tap(PLUGIN_NAME, (compilation) => {
-            compilation.mainTemplate.hooks.bootstrap.tap(PLUGIN_NAME, (source, chunk, hash, moduleTemplate) => {
-                compilation[NS] = {
-                    entryMap: this.entryMap
-                };
+            compilation[NS] = {
+                entryMap: this.entryMap
+            };
 
+            compilation.mainTemplate.hooks.bootstrap.tap(PLUGIN_NAME, (source, chunk, hash, moduleTemplate) => {
                 moduleTemplate.hooks.content.tap(PLUGIN_NAME, (moduleSource, module, options, dependencyTemplates) => {
                     if(!compilation[LOADER_NS]) {
                         // compilation.errors.push(new Error(`[module-override-webpack-plugin] Error: plugin was used without module-override-loader`));
